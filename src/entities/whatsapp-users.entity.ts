@@ -62,6 +62,6 @@ export class WhatsappUsers {
   @OneToMany(() => Logs, (log) => log.user)
   logs: Logs[];
 
-  @OneToMany(() => TrainingData, (trainingData) => trainingData.user)
-  trainingData: TrainingData[];
+  // @OneToMany(() => TrainingData, (trainingData) => trainingData.user)
+  // trainingData: TrainingData[];
 }

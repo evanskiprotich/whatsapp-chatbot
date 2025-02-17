@@ -31,7 +31,7 @@ export class TrainingData {
   @Column({ type: 'tinyint', default: 0 })
   trained: boolean;
 
-  @ManyToOne(() => WhatsappUsers, (user) => user.trainingData)
-  @JoinColumn({ name: 'user_id' })
-  user: WhatsappUsers;
+  // @ManyToOne(() => WhatsappUsers, (user) => user.trainingData)
+  // @JoinColumn({ name: 'user_id' })
+  // user: WhatsappUsers;
 }

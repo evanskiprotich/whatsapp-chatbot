@@ -49,7 +49,7 @@ export class OpenaiService {
 
       const response = await ollama.chat({
         messages: [{ role: 'system', content: systemPrompt }, ...userContext],
-        model: 'llama3.2:latest',
+        model: 'llama3.2',
       });
 
       const aiResponse = response.message.content;
