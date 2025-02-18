@@ -23,7 +23,7 @@ import { Faqs } from './entities/faqs.entity';
       password: process.env.DB_PASS || 'Dev@3121',
       database: process.env.DB_NAME || 'chatbot',
       entities: [WhatsappUsers, Logs, TrainingData, Faqs],
-      synchronize: true, // Set to false in production
+      synchronize: false, 
     }),
     WhatsappModule,
     OpenaiModule,

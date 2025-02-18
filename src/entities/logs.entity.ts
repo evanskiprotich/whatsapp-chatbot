@@ -13,7 +13,7 @@ export class Logs {
   id: number;
 
   @Column({ name: 'user_id', type: 'bigint' })
-  userId: number;
+  userId: string;
 
   @Column({
     type: 'text',

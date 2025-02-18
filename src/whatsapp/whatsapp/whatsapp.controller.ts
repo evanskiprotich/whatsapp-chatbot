@@ -46,74 +46,30 @@ export class WhatsappController {
 
     let user = await this.userContextService.findOrCreateUser(messageSender);
 
-    if (!user.firstName) {
+    // Handle registration if user details are incomplete
+    if (
+      !user.firstName ||
+      !user.lastName ||
+      !user.cada ||
+      !user.workStation ||
+      !user.acceptedTerms
+    ) {
       await this.whatsAppService.handleRegistration(messageSender, messageID);
-      return;
+      return; // Exit early to avoid logging registration messages
     }
 
-    if (!user.acceptedTerms) {
-      await this.whatsAppService.sendWhatsAppMessage(
-        messageSender,
-        'Please accept our terms by typing "accept" to continue.',
-        messageID,
-      );
-      return;
-    }
-
+    // Handle AI interaction
     switch (message.type) {
       case 'text':
         const text = message.text.body;
 
-        if (text.toLowerCase().includes('/imagine')) {
-          const response = await this.stabilityaiService.textToImage(
-            text.replace('/imagine', ''),
-          );
+        // Handle AI interaction
+        const aiResponse = await this.openaiService.generateAIResponse(
+          user.user_id.toString(),
+          text,
+        );
 
-          if (Array.isArray(response)) {
-            await this.whatsAppService.sendImageByUrl(
-              messageSender,
-              response[0],
-              messageID,
-            );
-          }
-          return;
-        }
-
-        if (text.toLowerCase().includes('accept')) {
-          user = await this.userContextService.updateUserDetails(
-            user,
-            user.firstName,
-            user.lastName,
-            user.cada,
-            user.workStation,
-            true,
-          );
-          await this.whatsAppService.sendWhatsAppMessage(
-            messageSender,
-            'Thank you for accepting our terms! How can I assist you today?',
-            messageID,
-          );
-          return;
-        }
-
-        if (text.toLowerCase().includes('menu')) {
-          await this.whatsAppService.sendEnhancedMainMenu(messageSender, messageID);
-          return;
-        }
-
-        if (text.toLowerCase().includes('faqs')) {
-          const faqs = await this.userContextService.getFaqsByCada(user.cada);
-          const faqText = faqs.map(faq => `${faq.question}\n${faq.answer}`).join('\n\n');
-          await this.whatsAppService.sendWhatsAppMessage(
-            messageSender,
-            faqText,
-            messageID,
-          );
-          return;
-        }
-
-        const aiResponse = await this.openaiService.generateAIResponse(user.user_id.toString(), text);
-
+        // Save the log only for AI interactions
         await this.userContextService.saveLog(user.user_id, text, aiResponse);
 
         await this.whatsAppService.sendWhatsAppMessage(

@@ -64,6 +64,15 @@ export class WhatsappService {
 
       const messageSendingStatus = await lastValueFrom(response);
       this.logger.log('Message Sent. Status:', messageSendingStatus);
+
+      // Save the log
+      const user =
+        await this.userContextService.findOrCreateUser(messageSender);
+      await this.userContextService.saveLog(
+        user.user_id,
+        userInput,
+        aiResponse,
+      );
     } catch (error) {
       this.logger.error(error);
       return 'Axle broke!! Abort mission!!';
@@ -146,9 +155,76 @@ export class WhatsappService {
   }
 
   async handleRegistration(messageSender: string, messageID: string) {
+    let user = await this.userContextService.findOrCreateUser(messageSender);
+
+    if (!user.firstName) {
+      await this.sendWhatsAppMessage(
+        messageSender,
+        'Welcome! Please provide your first name.',
+        messageID,
+      );
+      user.interactionStep = 'firstName';
+      await this.userContextService.updateUser(user);
+      return;
+    }
+
+    if (!user.lastName) {
+      await this.sendWhatsAppMessage(
+        messageSender,
+        'Thank you! Now, please provide your last name.',
+        messageID,
+      );
+      user.interactionStep = 'lastName';
+      await this.userContextService.updateUser(user);
+      return;
+    }
+
+    if (!user.cada) {
+      await this.sendWhatsAppMessage(
+        messageSender,
+        'Great! Now, please provide your CADA.',
+        messageID,
+      );
+      user.interactionStep = 'cada';
+      await this.userContextService.updateUser(user);
+      return;
+    }
+
+    if (!user.workStation) {
+      await this.sendWhatsAppMessage(
+        messageSender,
+        'Almost done! Please provide your work station.',
+        messageID,
+      );
+      user.interactionStep = 'workStation';
+      await this.userContextService.updateUser(user);
+      return;
+    }
+
+    if (!user.acceptedTerms) {
+      await this.sendWhatsAppMessage(
+        messageSender,
+        'Finally, please accept our terms by typing "accept".',
+        messageID,
+      );
+      user.interactionStep = 'acceptTerms';
+      await this.userContextService.updateUser(user);
+      return;
+    }
+
+    // Save the user details after registration is complete
+    await this.userContextService.saveUser(
+      user.phone,
+      user.firstName,
+      user.lastName,
+      user.cada,
+      user.workStation,
+      user.acceptedTerms,
+    );
+
     await this.sendWhatsAppMessage(
       messageSender,
-      'Welcome! Please provide your first name, last name, CADA, and work station. Also, please accept our terms by typing "accept".',
+      'Thank you for completing the registration! How can I assist you today?',
       messageID,
     );
   }
@@ -156,15 +232,17 @@ export class WhatsappService {
   async sendEnhancedMainMenu(messageSender: string, messageID: string) {
     const menu = `Please choose an option:
     1. Get FAQs
-    2. Generate Image
-    3. Chat with AI`;
+    2. Chat with AI
+    3. Exit`;
 
     await this.sendWhatsAppMessage(messageSender, menu, messageID);
   }
 
   async sendFAQs(messageSender: string, messageID: string) {
     const faqs = await this.userContextService.getFaqs();
-    const faqText = faqs.map(faq => `${faq.question}\n${faq.answer}`).join('\n\n');
+    const faqText = faqs
+      .map((faq) => `${faq.question}\n${faq.answer}`)
+      .join('\n\n');
 
     await this.sendWhatsAppMessage(messageSender, faqText, messageID);
   }

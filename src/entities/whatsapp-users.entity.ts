@@ -5,7 +5,7 @@ import { TrainingData } from './training-data.entity';
 @Entity('whatsapp_users')
 export class WhatsappUsers {
   @PrimaryGeneratedColumn({ type: 'bigint' })
-  user_id: number;
+  user_id: string;
 
   @Column({ type: 'varchar', length: 15, unique: true })
   phone: string;
@@ -62,6 +62,6 @@ export class WhatsappUsers {
   @OneToMany(() => Logs, (log) => log.user)
   logs: Logs[];
 
-  // @OneToMany(() => TrainingData, (trainingData) => trainingData.user)
-  // trainingData: TrainingData[];
+  @OneToMany(() => TrainingData, (trainingData) => trainingData.user)
+  trainingData: TrainingData[];
 }

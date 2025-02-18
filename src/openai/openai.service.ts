@@ -1,7 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenAI } from 'openai';
-import ollama from 'ollama';
-import { ChatCompletionMessageParam } from 'openai/resources';
 import { UserContextService } from 'src/user-context/user-context.service';
 
 @Injectable()
@@ -9,8 +7,7 @@ export class OpenaiService {
   constructor(private readonly context: UserContextService) {}
 
   private readonly openai = new OpenAI({
-    baseURL: 'http://localhost:11434/v1',
-    apiKey: 'process.env.OPENAI_API_KEY',
+    baseURL: 'http://localhost:11434/v1'
   });
   private readonly logger = new Logger(OpenaiService.name);
 
@@ -40,21 +37,36 @@ export class OpenaiService {
       
       Remember to keep the interactions human-like, personable, and infused with creativity while maintaining a professional demeanor. Your primary objective is to assist the user effectively while making the conversation enjoyable.`;
 
-      const userContext = (await this.context.getConversationHistory(Number(userID))).map(log => ({
-        role: log.question === 'user' ? 'user' : 'assistant',
-        content: log.response as string,
-        name: 'user'
-      }));
+      // const userContext = (await this.context.getConversationHistory(String(userID))).map(log => ({
+      //   role: log.question === 'user' ? 'user' : 'assistant',
+      //   content: log.response as string,
+      //   name: 'user'
+      // }));
+
+      const userContext = await this.context.saveAndFetchContext(
+        userInput, 
+        'user',
+        userID,
+      )
       this.logger.log(userContext);
 
-      const response = await ollama.chat({
-        messages: [{ role: 'system', content: systemPrompt }, ...userContext],
+      const formattedContext = userContext.map((msg) => ({
+        role: msg.role as 'user' | 'assistant', 
+        content: msg.content,
+      }));
+      
+      const response = await this.openai.chat.completions.create({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...formattedContext, 
+        ],
         model: 'llama3.2',
       });
+      
 
-      const aiResponse = response.message.content;
+      const aiResponse = response.choices[0].message.content;
 
-      await this.context.saveLog(Number(userID), userInput, aiResponse);
+      await this.context.saveLog(String(userID), userInput, aiResponse);
 
       return aiResponse;
     } catch (error) {
