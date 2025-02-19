@@ -4,11 +4,11 @@ import { TrainingData } from './training-data.entity';
 
 @Entity('whatsapp_users')
 export class WhatsappUsers {
-  @PrimaryGeneratedColumn({ type: 'bigint' })
-  user_id: string;
+  @PrimaryGeneratedColumn({name: 'id', type: 'bigint' })
+  id: string;
 
-  @Column({ type: 'varchar', length: 15, unique: true })
-  phone: string;
+  @Column({ name: 'phone_number', type: 'varchar', length: 15, unique: true })
+  phone_number: string;
 
   @Column({ name: 'first_name', type: 'varchar', length: 50, nullable: true })
   firstName: string;
@@ -53,11 +53,20 @@ export class WhatsappUsers {
   })
   interactionStep: string;
 
+  @Column({ name: 'is_registered',default: false })
+  isRegistered: boolean;
+
+  @Column({ name: 'registration_step', nullable: true })
+  registrationStep: string;
+
   @Column({ name: 'exit_status', type: 'tinyint', default: 0 })
   exitStatus: boolean;
 
   @Column({ name: 'is_disabled', type: 'tinyint', default: 0 })
   isDisabled: boolean;
+
+  @Column({name: 'current_state', default: 'MENU' })
+  currentState: string;
 
   @OneToMany(() => Logs, (log) => log.user)
   logs: Logs[];

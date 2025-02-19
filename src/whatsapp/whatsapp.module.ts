@@ -8,9 +8,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { WhatsappUsers } from 'src/entities/whatsapp-users.entity';
 import { Logs } from 'src/entities/logs.entity';
 import { Faqs } from 'src/entities/faqs.entity';
+import { HttpModule } from '@nestjs/axios';
 
 @Module({
   imports: [
+    HttpModule,
     TypeOrmModule.forFeature([WhatsappUsers, Logs, Faqs]), 
   ],
   controllers: [WhatsappController],

@@ -25,13 +25,13 @@ export class TrainingData {
   })
   createdAt: Date;
 
-  @Column({ name: 'user_id', type: 'bigint', nullable: true })
+  @Column({ name: 'id', type: 'bigint', nullable: true })
   userId: number;
 
   @Column({ type: 'tinyint', default: 0 })
   trained: boolean;
 
   @ManyToOne(() => WhatsappUsers, (user) => user.trainingData)
-  @JoinColumn({ name: 'user_id' })
+  @JoinColumn({ name: 'id' })
   user: WhatsappUsers;
 }

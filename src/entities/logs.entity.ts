@@ -1,47 +1,24 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  ManyToOne,
-  JoinColumn,
-} from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { WhatsappUsers } from './whatsapp-users.entity';
 
 @Entity('logs')
 export class Logs {
-  @PrimaryGeneratedColumn()
-  id: number;
+  @PrimaryGeneratedColumn('uuid')  
+  id: string;
 
-  @Column({ name: 'user_id', type: 'bigint' })
+  @Column({ name: 'userId' })
   userId: string;
 
-  @Column({
-    type: 'text',
-    nullable: true,
-    charset: 'utf8mb4',
-    collation: 'utf8mb4_unicode_ci',
-  })
+  @Column({ name: 'question', type: 'text', nullable: true })
   question: string;
 
-  @Column({
-    type: 'text',
-    nullable: true,
-    charset: 'utf8mb4',
-    collation: 'utf8mb4_unicode_ci',
-  })
+  @Column({ name: 'response', type: 'text', nullable: true })
   response: string;
 
-  @Column({
-    name: 'created_at',
-    type: 'timestamp',
-    default: () => 'CURRENT_TIMESTAMP',
-  })
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
-  timestamp: Date;
-
   @ManyToOne(() => WhatsappUsers, (user) => user.logs)
-  @JoinColumn({ name: 'user_id' })
+  @JoinColumn({ name: 'userId' })
   user: WhatsappUsers;
 }

@@ -1,23 +1,16 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
 
-@Entity('faqs')
+@Entity()
 export class Faqs {
-  @PrimaryGeneratedColumn()
-  id: number;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
-  @Column({ name: 'cada', type: 'varchar', length: 50, nullable: true })
-  cada: string;
-
-  @Column({ type: 'text', nullable: true })
+  @Column()
   question: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column('text')
   answer: string;
 
-  @Column({
-    name: 'created_at',
-    type: 'timestamp',
-    default: () => 'CURRENT_TIMESTAMP',
-  })
-  createdAt: Date;
+  @Column()
+  cada: string;
 }

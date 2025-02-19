@@ -1,17 +1,12 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { catchError, lastValueFrom, map } from 'rxjs';
+import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import { OpenaiService } from 'src/openai/openai.service';
-import { UserContextService } from 'src/user-context/user-context.service';
+import { catchError, lastValueFrom, map } from 'rxjs';
+import { OpenaiService } from '../../openai/openai.service';
+import { UserContextService } from '../../user-context/user-context.service';
+import { WhatsappUsers } from '../../entities/whatsapp-users.entity';
 
 @Injectable()
 export class WhatsappService {
-  constructor(
-    private readonly openaiService: OpenaiService,
-    private readonly userContextService: UserContextService,
-  ) {}
-
-  private readonly httpService = new HttpService();
   private readonly logger = new Logger(WhatsappService.name);
   private readonly url = `https://graph.facebook.com/${process.env.WHATSAPP_CLOUD_API_VERSION}/${process.env.WHATSAPP_CLOUD_API_PHONE_NUMBER_ID}/messages`;
   private readonly config = {
@@ -20,230 +15,233 @@ export class WhatsappService {
       Authorization: `Bearer ${process.env.WHATSAPP_CLOUD_API_ACCESS_TOKEN}`,
     },
   };
+  private messageQueue: Map<string, boolean> = new Map();
 
-  async sendWhatsAppMessage(
-    messageSender: string,
-    userInput: string,
-    messageID: string,
-  ) {
+  constructor(
+    private readonly openaiService: OpenaiService,
+    private readonly userContextService: UserContextService,
+    private readonly httpService: HttpService,
+  ) {}
+
+  async processIncomingMessage(phone: string, text: string, messageId: string) {
+    if (this.messageQueue.get(messageId)) {
+      return;
+    }
+    this.messageQueue.set(messageId, true);
+
+    try {
+      const user = await this.userContextService.findOrCreateUser(phone);
+      
+      if (!user.isRegistered) {
+        await this.handleRegistration(phone, text, messageId, user);
+      } else if (text.toLowerCase() === 'menu' || !user.currentState) {
+        user.currentState = 'MENU';
+        await this.userContextService.updateUser(user);
+        await this.sendMainMenu(phone, messageId);
+      } else {
+        await this.handleUserState(user, phone, text, messageId);
+      }
+    } catch (error) {
+      this.logger.error('Error processing message:', error);
+    } finally {
+      this.messageQueue.delete(messageId);
+    }
+  }
+
+  private async handleUserState(user: WhatsappUsers, phone: string, text: string, messageId: string) {
+    switch (user.currentState) {
+      case 'MENU':
+        await this.handleMenuChoice(user, phone, text, messageId);
+        break;
+      case 'CHAT':
+        await this.handleChatState(user, phone, text, messageId);
+        break;
+      default:
+        await this.sendMainMenu(phone, messageId);
+    }
+  }
+
+  private async handleMenuChoice(user: WhatsappUsers, phone: string, text: string, messageId: string) {
+    switch (text.toLowerCase()) {
+      case '1':
+      case 'faqs':
+        await this.sendFAQs(phone, messageId, user.cada);
+        break;
+      
+      case '2':
+      case 'chat':
+        user.currentState = 'CHAT';
+        await this.userContextService.updateUser(user);
+        await this.sendMessage(
+          phone,
+          'Chat mode activated! Type your message or "menu" to return to main menu.',
+          messageId
+        );
+        break;
+      
+      case '3':
+      case 'exit':
+        user.currentState = 'END';
+        await this.userContextService.updateUser(user);
+        await this.sendMessage(
+          phone,
+          'Thank you for using our service. Have a great day! 👋\nType "menu" when you need me again.',
+          messageId
+        );
+        break;
+      
+      default:
+        await this.sendMainMenu(phone, messageId);
+    }
+  }
+
+  private async handleChatState(user: WhatsappUsers, phone: string, text: string, messageId: string) {
+    if (text.toLowerCase() === 'menu') {
+      user.currentState = 'MENU';
+      await this.userContextService.updateUser(user);
+      await this.sendMainMenu(phone, messageId);
+      return;
+    }
+
     const aiResponse = await this.openaiService.generateAIResponse(
-      messageSender,
-      userInput,
+      user.id.toString(),
+      text
     );
+    await this.userContextService.saveLog(user.id, text, aiResponse);
+    await this.sendMessage(phone, aiResponse, messageId);
+  }
 
-    const data = JSON.stringify({
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: messageSender,
-      context: {
-        message_id: messageID,
+  private async handleRegistration(phone: string, text: string, messageId: string, user: WhatsappUsers) {
+    if (!user.registrationStep) {
+      user.registrationStep = 'firstName';
+      await this.userContextService.updateUser(user);
+      await this.sendMessage(phone, 'Welcome! Please provide your first name.', messageId);
+      return;
+    }
+  
+    const steps = {
+      firstName: {
+        next: 'lastName',
+        message: 'Thank you! Now, please provide your last name.',
+        field: 'firstName'
       },
-      type: 'text',
-      text: {
-        preview_url: false,
-        body: aiResponse,
+      lastName: {
+        next: 'cada',
+        message: 'Great! Now, please select your CADA:\n1. Finance\n2. HR\n3. IT\n4. Operations',
+        field: 'lastName'
       },
-    });
-
-    try {
-      const response = this.httpService
-        .post(this.url, data, this.config)
-        .pipe(
-          map((res) => {
-            return res.data;
-          }),
-        )
-        .pipe(
-          catchError((error) => {
-            this.logger.error(error);
-            throw new BadRequestException(
-              'Error Posting To WhatsApp Cloud API',
-            );
-          }),
-        );
-
-      const messageSendingStatus = await lastValueFrom(response);
-      this.logger.log('Message Sent. Status:', messageSendingStatus);
-
-      // Save the log
-      const user =
-        await this.userContextService.findOrCreateUser(messageSender);
-      await this.userContextService.saveLog(
-        user.user_id,
-        userInput,
-        aiResponse,
+      cada: {
+        next: 'workStation',
+        message: 'Almost done! Please provide your work station.',
+        field: 'cada'
+      },
+      workStation: {
+        next: 'terms',
+        message: 'Finally, please type "accept" to accept our terms of service.',
+        field: 'workStation'
+      }
+    };
+  
+    const currentStep = steps[user.registrationStep];
+    if (currentStep) {
+      if (user.registrationStep === 'cada') {
+        const cadaOptions = { '1': 'Finance', '2': 'HR', '3': 'IT', '4': 'Operations' };
+        user.cada = cadaOptions[text] || text;
+      } else {
+        user[currentStep.field] = text;
+      }
+      user.registrationStep = currentStep.next;
+      await this.userContextService.updateUser(user);
+      await this.sendMessage(phone, currentStep.message, messageId);
+      return;
+    }
+  
+    if (user.registrationStep === 'terms' && text.toLowerCase() === 'accept') {
+      user.isRegistered = true;
+      user.currentState = 'MENU';
+      user.registrationStep = 'completed';
+      await this.userContextService.updateUser(user);
+      await this.sendMessage(
+        phone,
+        'Registration complete! Welcome to our service.',
+        messageId
       );
-    } catch (error) {
-      this.logger.error(error);
-      return 'Axle broke!! Abort mission!!';
+      await this.sendMainMenu(phone, messageId);
+    } else if (user.registrationStep === 'terms') {
+      await this.sendMessage(
+        phone,
+        'Please type "accept" to accept the terms.',
+        messageId
+      );
     }
   }
+  private async sendMainMenu(phone: string, messageId: string) {
+    const menu = `Please choose an option:
+1. 📚 Get FAQs
+2. 💭 Chat with AI
+3. 👋 Exit
 
-  async sendImageByUrl(
-    messageSender: string,
-    fileName: string,
-    messageID: string,
-  ) {
-    const imageUrl = `${process.env.SERVER_URL}/${fileName}`;
-    const data = JSON.stringify({
+Reply with the number or option name.`;
+    await this.sendMessage(phone, menu, messageId);
+  }
+
+  private async sendFAQs(phone: string, messageId: string, cada: string) {
+    const faqs = await this.userContextService.getFaqsByCada(cada);
+    const faqText = faqs.length > 0
+      ? faqs.map((faq, index) => `${index + 1}. Q: ${faq.question}\nA: ${faq.answer}`).join('\n\n')
+      : 'No FAQs available for your CADA. Please contact support for assistance.';
+    
+    await this.sendMessage(phone, faqText, messageId);
+    await this.sendMessage(phone, '\nType "menu" to return to main menu.', messageId);
+  }
+
+  async sendMessage(phone: string, message: string, messageId: string) {
+    const data = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to: messageSender,
-      context: {
-        message_id: messageID,
-      },
-      type: 'image',
-      image: {
-        link: imageUrl,
-      },
-    });
+      to: phone,
+      context: { message_id: messageId },
+      type: 'text',
+      text: { preview_url: false, body: message },
+    };
 
     try {
-      const response = this.httpService
-        .post(this.url, data, this.config)
-        .pipe(
-          map((res) => {
-            return res.data;
-          }),
-        )
-        .pipe(
+      const response = await lastValueFrom(
+        this.httpService.post(this.url, data, this.config).pipe(
+          map((res) => res.data),
           catchError((error) => {
-            this.logger.error(error);
-            throw new BadRequestException(
-              'Error Posting To WhatsApp Cloud API',
-            );
+            this.logger.error('Error sending message:', error);
+            throw error;
           }),
-        );
-
-      const messageSendingStatus = await lastValueFrom(response);
-
-      return `Image sent successfully, response: ${messageSendingStatus}`;
+        ),
+      );
+      this.logger.log('Message Sent. Status:', response);
+      return response;
     } catch (error) {
-      this.logger.error(error);
-      return 'Axle broke!! Error Sending Image!!';
+      this.logger.error('Error sending message:', error);
+      throw error;
     }
   }
 
-  async markMessageAsRead(messageID: string) {
-    const data = JSON.stringify({
+  async markMessageAsRead(messageId: string) {
+    const data = {
       messaging_product: 'whatsapp',
       status: 'read',
-      message_id: messageID,
-    });
+      message_id: messageId,
+    };
 
     try {
-      const response = this.httpService
-        .post(this.url, data, this.config)
-        .pipe(
-          map((res) => {
-            return res.data;
-          }),
-        )
-        .pipe(
+      await lastValueFrom(
+        this.httpService.post(this.url, data, this.config).pipe(
+          map((res) => res.data),
           catchError((error) => {
-            this.logger.error(error);
-            throw new BadRequestException('Error Marking Message As Read');
+            this.logger.error('Error marking message as read:', error);
+            throw error;
           }),
-        );
-
-      const messageStatus = await lastValueFrom(response);
-      this.logger.log('Message Marked As Read. Status:', messageStatus);
+        ),
+      );
     } catch (error) {
-      this.logger.error(error);
-      return 'Axle broke!! Abort mission!!';
+      this.logger.error('Error marking message as read:', error);
     }
-  }
-
-  async handleRegistration(messageSender: string, messageID: string) {
-    let user = await this.userContextService.findOrCreateUser(messageSender);
-
-    if (!user.firstName) {
-      await this.sendWhatsAppMessage(
-        messageSender,
-        'Welcome! Please provide your first name.',
-        messageID,
-      );
-      user.interactionStep = 'firstName';
-      await this.userContextService.updateUser(user);
-      return;
-    }
-
-    if (!user.lastName) {
-      await this.sendWhatsAppMessage(
-        messageSender,
-        'Thank you! Now, please provide your last name.',
-        messageID,
-      );
-      user.interactionStep = 'lastName';
-      await this.userContextService.updateUser(user);
-      return;
-    }
-
-    if (!user.cada) {
-      await this.sendWhatsAppMessage(
-        messageSender,
-        'Great! Now, please provide your CADA.',
-        messageID,
-      );
-      user.interactionStep = 'cada';
-      await this.userContextService.updateUser(user);
-      return;
-    }
-
-    if (!user.workStation) {
-      await this.sendWhatsAppMessage(
-        messageSender,
-        'Almost done! Please provide your work station.',
-        messageID,
-      );
-      user.interactionStep = 'workStation';
-      await this.userContextService.updateUser(user);
-      return;
-    }
-
-    if (!user.acceptedTerms) {
-      await this.sendWhatsAppMessage(
-        messageSender,
-        'Finally, please accept our terms by typing "accept".',
-        messageID,
-      );
-      user.interactionStep = 'acceptTerms';
-      await this.userContextService.updateUser(user);
-      return;
-    }
-
-    // Save the user details after registration is complete
-    await this.userContextService.saveUser(
-      user.phone,
-      user.firstName,
-      user.lastName,
-      user.cada,
-      user.workStation,
-      user.acceptedTerms,
-    );
-
-    await this.sendWhatsAppMessage(
-      messageSender,
-      'Thank you for completing the registration! How can I assist you today?',
-      messageID,
-    );
-  }
-
-  async sendEnhancedMainMenu(messageSender: string, messageID: string) {
-    const menu = `Please choose an option:
-    1. Get FAQs
-    2. Chat with AI
-    3. Exit`;
-
-    await this.sendWhatsAppMessage(messageSender, menu, messageID);
-  }
-
-  async sendFAQs(messageSender: string, messageID: string) {
-    const faqs = await this.userContextService.getFaqs();
-    const faqText = faqs
-      .map((faq) => `${faq.question}\n${faq.answer}`)
-      .join('\n\n');
-
-    await this.sendWhatsAppMessage(messageSender, faqText, messageID);
   }
 }

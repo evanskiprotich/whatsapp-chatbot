@@ -18,14 +18,14 @@ export class UserContextService {
     private readonly faqsRepository: Repository<Faqs>,
   ) {}
 
-  async findOrCreateUser(phone: string): Promise<WhatsappUsers> {
-    let user = await this.whatsappUsersRepository.findOne({ where: { phone } });
-
+  async findOrCreateUser(phone_number: string): Promise<WhatsappUsers> {
+    let user = await this.whatsappUsersRepository.findOne({ where: { phone_number } });
+  
     if (!user) {
-      user = this.whatsappUsersRepository.create({ phone });
+      user = this.whatsappUsersRepository.create({ phone_number, interactionStep: 'initial' });
       await this.whatsappUsersRepository.save(user);
     }
-
+  
     return user;
   }
 
@@ -52,7 +52,7 @@ export class UserContextService {
 
   // SAVE USER DURING REGISTRATION TO WHATSAAP_USERS TABLE
   async saveUser(
-    phone: string,
+    phone_number: string,
     firstName: string,
     lastName: string,
     cada: string,
@@ -60,7 +60,7 @@ export class UserContextService {
     acceptedTerms: boolean,
   ): Promise<WhatsappUsers> {
     const user = this.whatsappUsersRepository.create({
-      phone,
+      phone_number,
       firstName,
       lastName,
       cada,
@@ -96,28 +96,38 @@ export class UserContextService {
   ): Promise<Array<{ role: string; content: string }>> {
     try {
       const user = await this.whatsappUsersRepository.findOne({
-        where: { user_id: userId },
+        where: { id: userId },
       });
-
+  
       if (!user) {
         this.logger.error('User not found');
         throw new Error('User not found');
       }
-
-      // Save the new context
-      const log = this.logsRepository.create({
-        userId: user.user_id,
-        question: contextType === 'user' ? context : null,
-        response: contextType === 'assistant' ? context : null,
+  
+      // Save the new context only if it's not already saved
+      const existingLog = await this.logsRepository.findOne({
+        where: {
+          userId: user.id,
+          question: contextType === 'user' ? context : null,
+          response: contextType === 'assistant' ? context : null,
+        },
       });
-      await this.logsRepository.save(log);
-
+  
+      if (!existingLog) {
+        const log = this.logsRepository.create({
+          userId: user.id,
+          question: contextType === 'user' ? context : null,
+          response: contextType === 'assistant' ? context : null,
+        });
+        await this.logsRepository.save(log);
+      }
+  
       // Fetch the conversation history
       const logs = await this.logsRepository.find({
-        where: { userId: user.user_id },
+        where: { userId: user.id },
         order: { createdAt: 'ASC' },
       });
-
+  
       return logs.map((log) => ({
         role: log.question ? 'user' : 'assistant',
         content: log.question || log.response,
@@ -130,5 +140,15 @@ export class UserContextService {
 
   async getConversationHistory(userId: string): Promise<Logs[]> {
     return this.logsRepository.find({ where: { userId } });
+  }
+
+  async isUserFullyRegistered(user: WhatsappUsers): Promise<boolean> {
+    return (
+      user.firstName &&
+      user.lastName &&
+      user.cada &&
+      user.workStation &&
+      user.acceptedTerms
+    );
   }
 }

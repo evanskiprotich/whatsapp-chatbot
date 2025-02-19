@@ -37,12 +37,6 @@ export class OpenaiService {
       
       Remember to keep the interactions human-like, personable, and infused with creativity while maintaining a professional demeanor. Your primary objective is to assist the user effectively while making the conversation enjoyable.`;
 
-      // const userContext = (await this.context.getConversationHistory(String(userID))).map(log => ({
-      //   role: log.question === 'user' ? 'user' : 'assistant',
-      //   content: log.response as string,
-      //   name: 'user'
-      // }));
-
       const userContext = await this.context.saveAndFetchContext(
         userInput, 
         'user',
@@ -66,7 +60,11 @@ export class OpenaiService {
 
       const aiResponse = response.choices[0].message.content;
 
-      await this.context.saveLog(String(userID), userInput, aiResponse);
+      // Save the log only if the user is fully registered
+      const user = await this.context.findOrCreateUser(userID);
+      if (this.context.isUserFullyRegistered(user)) {
+        await this.context.saveLog(userID, userInput, aiResponse);
+      }
 
       return aiResponse;
     } catch (error) {
